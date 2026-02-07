@@ -1,0 +1,523 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum UserRole {
+  ADMIN
+  OPERATOR
+  VIEWER
+  API_USER
+}
+
+enum TransactionStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+enum TransactionType {
+  PAYMENT
+  REFUND
+  PAYOUT
+  TRANSFER
+}
+
+enum PaymentMethodType {
+  CARD
+  BANK_TRANSFER
+  DIGITAL_WALLET
+  CRYPTO
+}
+
+enum Currency {
+  USD
+  EUR
+  GBP
+  SGD
+  JPY
+  AUD
+  CAD
+  CHF
+  CNY
+  HKD
+}
+
+enum ProviderStatus {
+  ACTIVE
+  INACTIVE
+  MAINTENANCE
+  DEGRADED
+}
+
+enum LedgerEntryType {
+  DEBIT
+  CREDIT
+}
+
+enum SettlementStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum ReconciliationStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  REQUIRES_REVIEW
+}
+
+enum WebhookEventStatus {
+  RECEIVED
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
+// ============================================
+// USER & AUTHENTICATION
+// ============================================
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  firstName    String    @map("first_name")
+  lastName     String    @map("last_name")
+  role         UserRole  @default(VIEWER)
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  apiKeys   ApiKey[]
+  auditLogs AuditLog[]
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+model ApiKey {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  keyHash     String    @unique @map("key_hash")
+  name        String
+  permissions Json      @default("[]")
+  expiresAt   DateTime? @map("expires_at")
+  lastUsedAt  DateTime? @map("last_used_at")
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([keyHash])
+  @@map("api_keys")
+}
+
+// ============================================
+// MERCHANT & CUSTOMER
+// ============================================
+
+model Merchant {
+  id              String   @id @default(uuid())
+  name            String
+  legalName       String   @map("legal_name")
+  email           String   @unique
+  defaultCurrency Currency @default(USD) @map("default_currency")
+  settings        Json     @default("{}")
+  metadata        Json     @default("{}")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  customers              Customer[]
+  providerConfigs        MerchantProviderConfig[]
+  transactions           Transaction[]
+  routingRules           RoutingRule[]
+  settlements            Settlement[]
+  reconciliationReports  ReconciliationReport[]
+
+  @@index([email])
+  @@index([isActive])
+  @@map("merchants")
+}
+
+model Customer {
+  id         String   @id @default(uuid())
+  merchantId String   @map("merchant_id")
+  externalId String?  @map("external_id")
+  email      String?
+  name       String?
+  metadata   Json     @default("{}")
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  merchant       Merchant        @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  paymentMethods PaymentMethod[]
+  transactions   Transaction[]
+
+  @@unique([merchantId, externalId])
+  @@index([merchantId])
+  @@index([email])
+  @@map("customers")
+}
+
+// ============================================
+// PAYMENT PROVIDERS
+// ============================================
+
+model PaymentProvider {
+  id                   String         @id @default(uuid())
+  name                 String         @unique
+  code                 String         @unique
+  status               ProviderStatus @default(ACTIVE)
+  supportedCurrencies  Currency[]     @map("supported_currencies")
+  supportedMethods     PaymentMethodType[] @map("supported_methods")
+  baseUrl              String?        @map("base_url")
+  webhookUrl           String?        @map("webhook_url")
+  config               Json           @default("{}")
+  isActive             Boolean        @default(true) @map("is_active")
+  createdAt            DateTime       @default(now()) @map("created_at")
+  updatedAt            DateTime       @updatedAt @map("updated_at")
+
+  merchantConfigs MerchantProviderConfig[]
+  transactions    Transaction[]
+  settlements     Settlement[]
+  webhookEvents   WebhookEvent[]
+
+  @@index([code])
+  @@index([status])
+  @@map("payment_providers")
+}
+
+model MerchantProviderConfig {
+  id                String   @id @default(uuid())
+  merchantId        String   @map("merchant_id")
+  providerId        String   @map("provider_id")
+  credentials       Json     @default("{}")
+  settings          Json     @default("{}")
+  priority          Int      @default(0)
+  isActive          Boolean  @default(true) @map("is_active")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  merchant Merchant        @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  provider PaymentProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([merchantId, providerId])
+  @@index([merchantId])
+  @@index([providerId])
+  @@map("merchant_provider_configs")
+}
+
+// ============================================
+// PAYMENT METHODS
+// ============================================
+
+model PaymentMethod {
+  id             String            @id @default(uuid())
+  customerId     String            @map("customer_id")
+  type           PaymentMethodType
+  token          String?
+  last4          String?
+  expiryMonth    Int?              @map("expiry_month")
+  expiryYear     Int?              @map("expiry_year")
+  brand          String?
+  bankName       String?           @map("bank_name")
+  walletProvider String?           @map("wallet_provider")
+  metadata       Json              @default("{}")
+  isDefault      Boolean           @default(false) @map("is_default")
+  isActive       Boolean           @default(true) @map("is_active")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+
+  customer     Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([customerId])
+  @@index([type])
+  @@map("payment_methods")
+}
+
+// ============================================
+// TRANSACTIONS
+// ============================================
+
+model Transaction {
+  id                    String            @id @default(uuid())
+  merchantId            String            @map("merchant_id")
+  customerId            String?           @map("customer_id")
+  providerId            String?           @map("provider_id")
+  paymentMethodId       String?           @map("payment_method_id")
+  parentTransactionId   String?           @map("parent_transaction_id")
+  type                  TransactionType   @default(PAYMENT)
+  status                TransactionStatus @default(PENDING)
+  amount                BigInt
+  currency              Currency
+  convertedAmount       BigInt?           @map("converted_amount")
+  convertedCurrency     Currency?         @map("converted_currency")
+  fxRateId              String?           @map("fx_rate_id")
+  providerTransactionId String?           @map("provider_transaction_id")
+  providerResponse      Json?             @map("provider_response")
+  description           String?
+  metadata              Json              @default("{}")
+  idempotencyKey        String?           @unique @map("idempotency_key")
+  failureReason         String?           @map("failure_reason")
+  capturedAt            DateTime?         @map("captured_at")
+  refundedAt            DateTime?         @map("refunded_at")
+  cancelledAt           DateTime?         @map("cancelled_at")
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+
+  merchant          Merchant                   @relation(fields: [merchantId], references: [id])
+  customer          Customer?                  @relation(fields: [customerId], references: [id])
+  provider          PaymentProvider?           @relation(fields: [providerId], references: [id])
+  paymentMethod     PaymentMethod?             @relation(fields: [paymentMethodId], references: [id])
+  parentTransaction Transaction?               @relation("TransactionRefunds", fields: [parentTransactionId], references: [id])
+  childTransactions Transaction[]              @relation("TransactionRefunds")
+  fxRate            FxRate?                    @relation(fields: [fxRateId], references: [id])
+  statusHistory     TransactionStatusHistory[]
+  ledgerEntries     LedgerEntry[]
+
+  @@index([merchantId])
+  @@index([customerId])
+  @@index([providerId])
+  @@index([status])
+  @@index([type])
+  @@index([createdAt])
+  @@index([providerTransactionId])
+  @@map("transactions")
+}
+
+model TransactionStatusHistory {
+  id            String            @id @default(uuid())
+  transactionId String            @map("transaction_id")
+  fromStatus    TransactionStatus? @map("from_status")
+  toStatus      TransactionStatus @map("to_status")
+  reason        String?
+  metadata      Json              @default("{}")
+  createdAt     DateTime          @default(now()) @map("created_at")
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@index([transactionId])
+  @@index([createdAt])
+  @@map("transaction_status_history")
+}
+
+// ============================================
+// ROUTING RULES
+// ============================================
+
+model RoutingRule {
+  id          String   @id @default(uuid())
+  merchantId  String   @map("merchant_id")
+  name        String
+  description String?
+  conditions  Json     @default("{}")
+  providerId  String   @map("provider_id")
+  priority    Int      @default(0)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@index([merchantId])
+  @@index([priority])
+  @@map("routing_rules")
+}
+
+// ============================================
+// FX RATES
+// ============================================
+
+model FxRate {
+  id             String   @id @default(uuid())
+  sourceCurrency Currency @map("source_currency")
+  targetCurrency Currency @map("target_currency")
+  rate           Decimal  @db.Decimal(18, 8)
+  spread         Decimal  @default(0) @db.Decimal(8, 4)
+  effectiveRate  Decimal  @map("effective_rate") @db.Decimal(18, 8)
+  source         String   @default("manual")
+  validFrom      DateTime @map("valid_from")
+  validTo        DateTime? @map("valid_to")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  transactions Transaction[]
+  history      FxRateHistory[]
+
+  @@unique([sourceCurrency, targetCurrency, validFrom])
+  @@index([sourceCurrency, targetCurrency])
+  @@index([validFrom, validTo])
+  @@map("fx_rates")
+}
+
+model FxRateHistory {
+  id        String   @id @default(uuid())
+  fxRateId  String   @map("fx_rate_id")
+  rate      Decimal  @db.Decimal(18, 8)
+  spread    Decimal  @db.Decimal(8, 4)
+  source    String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  fxRate FxRate @relation(fields: [fxRateId], references: [id], onDelete: Cascade)
+
+  @@index([fxRateId])
+  @@index([createdAt])
+  @@map("fx_rate_history")
+}
+
+// ============================================
+// LEDGER
+// ============================================
+
+model LedgerEntry {
+  id            String          @id @default(uuid())
+  transactionId String          @map("transaction_id")
+  accountCode   String          @map("account_code")
+  entryType     LedgerEntryType @map("entry_type")
+  amount        BigInt
+  currency      Currency
+  balance       BigInt?
+  description   String?
+  metadata      Json            @default("{}")
+  createdAt     DateTime        @default(now()) @map("created_at")
+
+  transaction Transaction @relation(fields: [transactionId], references: [id])
+
+  @@index([transactionId])
+  @@index([accountCode])
+  @@index([createdAt])
+  @@map("ledger_entries")
+}
+
+// ============================================
+// SETTLEMENTS & RECONCILIATION
+// ============================================
+
+model Settlement {
+  id              String           @id @default(uuid())
+  merchantId      String           @map("merchant_id")
+  providerId      String           @map("provider_id")
+  status          SettlementStatus @default(PENDING)
+  amount          BigInt
+  currency        Currency
+  fee             BigInt           @default(0)
+  netAmount       BigInt           @map("net_amount")
+  transactionCount Int             @map("transaction_count")
+  periodStart     DateTime         @map("period_start")
+  periodEnd       DateTime         @map("period_end")
+  settledAt       DateTime?        @map("settled_at")
+  providerRef     String?          @map("provider_ref")
+  metadata        Json             @default("{}")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  merchant Merchant        @relation(fields: [merchantId], references: [id])
+  provider PaymentProvider @relation(fields: [providerId], references: [id])
+
+  @@index([merchantId])
+  @@index([providerId])
+  @@index([status])
+  @@index([periodStart, periodEnd])
+  @@map("settlements")
+}
+
+model ReconciliationReport {
+  id                   String               @id @default(uuid())
+  merchantId           String               @map("merchant_id")
+  status               ReconciliationStatus @default(PENDING)
+  periodStart          DateTime             @map("period_start")
+  periodEnd            DateTime             @map("period_end")
+  totalTransactions    Int                  @map("total_transactions")
+  matchedTransactions  Int                  @default(0) @map("matched_transactions")
+  unmatchedTransactions Int                 @default(0) @map("unmatched_transactions")
+  discrepancies        Json                 @default("[]")
+  summary              Json                 @default("{}")
+  generatedAt          DateTime?            @map("generated_at")
+  reviewedAt           DateTime?            @map("reviewed_at")
+  reviewedBy           String?              @map("reviewed_by")
+  createdAt            DateTime             @default(now()) @map("created_at")
+  updatedAt            DateTime             @updatedAt @map("updated_at")
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+
+  @@index([merchantId])
+  @@index([status])
+  @@index([periodStart, periodEnd])
+  @@map("reconciliation_reports")
+}
+
+// ============================================
+// WEBHOOKS
+// ============================================
+
+model WebhookEvent {
+  id             String             @id @default(uuid())
+  providerId     String             @map("provider_id")
+  eventType      String             @map("event_type")
+  status         WebhookEventStatus @default(RECEIVED)
+  payload        Json
+  headers        Json               @default("{}")
+  signature      String?
+  processedAt    DateTime?          @map("processed_at")
+  attempts       Int                @default(0)
+  lastError      String?            @map("last_error")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+
+  provider PaymentProvider @relation(fields: [providerId], references: [id])
+
+  @@index([providerId])
+  @@index([eventType])
+  @@index([status])
+  @@index([createdAt])
+  @@map("webhook_events")
+}
+
+// ============================================
+// AUDIT LOG
+// ============================================
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?  @map("user_id")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  oldValues  Json?    @map("old_values")
+  newValues  Json?    @map("new_values")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  metadata   Json     @default("{}")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

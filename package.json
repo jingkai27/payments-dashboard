@@ -1,0 +1,40 @@
+{
+  "name": "payment-orchestration",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Multi-Currency Payment Orchestration System",
+  "scripts": {
+    "dev": "pnpm --parallel --filter './packages/*' dev",
+    "dev:backend": "pnpm --filter backend dev",
+    "dev:frontend": "pnpm --filter frontend dev",
+    "build": "pnpm --filter './packages/*' build",
+    "build:backend": "pnpm --filter backend build",
+    "build:frontend": "pnpm --filter frontend build",
+    "lint": "pnpm --filter './packages/*' lint",
+    "lint:fix": "pnpm --filter './packages/*' lint:fix",
+    "test": "pnpm --filter './packages/*' test",
+    "test:backend": "pnpm --filter backend test",
+    "db:generate": "pnpm --filter backend db:generate",
+    "db:migrate": "pnpm --filter backend db:migrate",
+    "db:migrate:dev": "pnpm --filter backend db:migrate:dev",
+    "db:push": "pnpm --filter backend db:push",
+    "db:seed": "pnpm --filter backend db:seed",
+    "db:studio": "pnpm --filter backend db:studio",
+    "db:reset": "pnpm --filter backend db:reset",
+    "clean": "pnpm --filter './packages/*' clean && rm -rf node_modules",
+    "typecheck": "pnpm --filter './packages/*' typecheck"
+  },
+  "keywords": [
+    "payment",
+    "orchestration",
+    "multi-currency",
+    "fintech"
+  ],
+  "author": "",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@8.15.0"
+}
