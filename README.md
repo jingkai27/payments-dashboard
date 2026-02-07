@@ -1,7 +1,15 @@
 # Multi-Currency Payment Orchestration System
 ![Dashboard Overview](./assets/dashboard.png)
 ## Project Overview
-To facilitate some of the learnings that I have in my finance course, I did some research and built a **simplified payment orchestration platform** that routes transactions across multiple payment providers, handles currency conversion, and provides real-time transaction monitoring.
+Born out of my deep dive into Digital Payments and Innovation (IS430), the **Multi-Currency Payment Orchestration System (MCPOS)** is a B2B platform designed to solve the inefficiencies of single-provider dependency. Instead of routing all transactions through a default gateway, MCPOS acts as an intelligent decision engine that dynamically selects the optimal payment route based on real-time currency rates, provider health, and fee structures. This ensures merchants always get the lowest fees and highest success rates, while providing redundancy against provider outages that would otherwise result in lost revenue.
+
+
+
+## Value Proposition: 
+1. **Lower Fees**. Stripe might charge 3% for international cards, PayPal charges 4% while local provider 1%. Therefore, this system routes the transaction to the cheapest option for that specific customer's currency/card, saving the business massive amounts of money at scale. 
+2. **Higher Success Rates (Revenue Uplift)**. Sometimes a bank declines a transaction because the payment processor is foreign. Therefore, the idea is to route a German customer's payment through a European processer, improving the chance that the bank will approve it. 
+3. **Zero Downtime (Redundancy)**. If Stripe is down, the system can automatically route transactions to PayPal or another provider, ensuring that the business never loses a sale due to a payment processor outage. 
+4. **Single Integration**. Integrating Stripe, Paypal, Adyen and Checkout.com can take months of engineering work. Through this platform, the business can integrate through the API once and get access to all those providers behind the scene. 
 
 ## Core Features
 

@@ -46,3 +46,7 @@ temp/
 
 # Generated files
 *.generated.*
+
+# Documentation
+*.md
+!README.md
